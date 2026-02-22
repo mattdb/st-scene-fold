@@ -18,6 +18,7 @@ import {
     getAutoStartIndex,
     getDefaultSummarizationPrompt,
     getSceneFoldData,
+    ensureMessageUUID,
     reconcileScenesAfterDeletion,
     reconcileDuplicatedMessages,
 } from './scene-data.js';
@@ -775,6 +776,147 @@ async function slashSceneCollapse(_namedArgs, unnamedArgs) {
 }
 
 /**
+ * /scene-convert-rememory — detect ReMemory scenes and convert to Scene Fold.
+ */
+async function slashConvertRememory() {
+    const ctx = SillyTavern.getContext();
+    const settings = getSettings(ctx.extensionSettings);
+    if (!settings.enabled) return 'Scene Fold is disabled';
+
+    const { chat, chatMetadata, uuidv4, saveChat, saveMetadataDebounced, reloadCurrentChat } = ctx;
+
+    if (!chat || chat.length === 0) {
+        toastr.warning('No chat loaded');
+        return '0';
+    }
+
+    // Step 1: Detect ReMemory summary messages.
+    // In MESSAGE mode, ReMemory increments mes_id, inserts a /comment at that index,
+    // then sets rmr_scene=true on chat[mes_id] — the summary message itself.
+    // So rmr_scene marks the SUMMARY, not the last source message.
+    let summaryIndices = [];
+    for (let i = 0; i < chat.length; i++) {
+        if (chat[i]?.extra?.rmr_scene === true) {
+            summaryIndices.push(i);
+        }
+    }
+
+    // Fallback: if no rmr_scene markers, look for /comment messages (extra.type === "comment")
+    // or messages named "Note" that aren't from the user
+    if (summaryIndices.length === 0) {
+        for (let i = 0; i < chat.length; i++) {
+            const msg = chat[i];
+            if (msg?.is_user) continue;
+            if (msg?.extra?.type === 'comment' || msg?.name === 'Note') {
+                summaryIndices.push(i);
+            }
+        }
+    }
+
+    if (summaryIndices.length === 0) {
+        toastr.info('No ReMemory scenes detected in this chat');
+        return '0';
+    }
+
+    // Step 2: Build scene ranges.
+    // Each summary's sources are all messages between the previous summary and this one.
+    // Layout: [source...] [summary] [source...] [summary] [trailing...]
+    const scenesToConvert = [];
+    let prevSummaryIdx = -1;
+
+    for (const summaryIdx of summaryIndices) {
+        const startIdx = prevSummaryIdx + 1;
+        const sourceEnd = summaryIdx - 1;
+        prevSummaryIdx = summaryIdx;
+
+        if (sourceEnd < startIdx) {
+            console.warn(`[Scene Fold] Skipping empty scene at summary index ${summaryIdx}`);
+            continue;
+        }
+
+        // Skip if already converted to Scene Fold
+        let alreadyConverted = false;
+        for (let i = startIdx; i <= sourceEnd; i++) {
+            if (chat[i]?.extra?.scene_fold_scenes?.length > 0) {
+                alreadyConverted = true;
+                break;
+            }
+        }
+        if (alreadyConverted) {
+            console.log(`[Scene Fold] Skipping already-converted range ${startIdx}-${sourceEnd}`);
+            continue;
+        }
+
+        scenesToConvert.push({ startIdx, endIdx: sourceEnd, summaryIdx });
+    }
+
+    if (scenesToConvert.length === 0) {
+        toastr.info('All ReMemory scenes are already converted or no valid scenes found');
+        return '0';
+    }
+
+    console.log(`[Scene Fold] Converting ${scenesToConvert.length} ReMemory scene(s):`,
+        scenesToConvert.map(s => `sources ${s.startIdx}-${s.endIdx}, summary ${s.summaryIdx}`));
+
+    // Step 3: Reorder and convert each scene.
+    // Scene Fold expects: [summary] [source1] ... [sourceN]
+    // ReMemory has:       [source1] ... [sourceN] [summary]
+    // Process in reverse order so earlier indices aren't affected by later splices.
+    let converted = 0;
+    for (let si = scenesToConvert.length - 1; si >= 0; si--) {
+        const { startIdx, endIdx, summaryIdx } = scenesToConvert[si];
+
+        // Move summary from after sources to before them
+        const [summaryMsg] = chat.splice(summaryIdx, 1);
+        chat.splice(startIdx, 0, summaryMsg);
+        // Now: chat[startIdx] = summary, sources at startIdx+1 through endIdx+1
+        // (net effect on array length is zero: one remove + one insert)
+
+        const summaryUUID = ensureMessageUUID(summaryMsg, uuidv4);
+
+        // Tag summary message with Scene Fold metadata
+        if (!summaryMsg.extra) summaryMsg.extra = {};
+        summaryMsg.extra.scene_fold_role = 'summary';
+        summaryMsg.is_system = false; // Summary must be included in prompts
+
+        // Create the scene from the source range (shifted +1 by summary insertion)
+        const sourceStart = startIdx + 1;
+        const sourceEnd = endIdx + 1;
+        const scene = createScene(chatMetadata, chat, sourceStart, sourceEnd, uuidv4);
+
+        // Link summary to the scene
+        summaryMsg.extra.scene_fold_scene_id = scene.id;
+
+        // Mark source messages as hidden from prompts
+        for (let i = sourceStart; i <= sourceEnd; i++) {
+            chat[i].is_system = true;
+        }
+
+        // Update scene to completed + folded
+        updateScene(chatMetadata, scene.id, {
+            status: 'completed',
+            folded: true,
+            summaryMessageUUID: summaryUUID,
+        });
+
+        converted++;
+    }
+
+    // Step 4: Save and reload
+    await saveChat();
+    saveMetadataDebounced();
+    await reloadCurrentChat();
+
+    const freshCtx = SillyTavern.getContext();
+    applyAllFoldVisuals(freshCtx);
+    renderSceneList(freshCtx);
+    updateToolbar(freshCtx, queue);
+
+    toastr.success(`Converted ${converted} ReMemory scene(s) to Scene Fold`);
+    return String(converted);
+}
+
+/**
  * Register Scene Fold slash commands with SillyTavern.
  */
 function registerSlashCommands() {
@@ -832,6 +974,13 @@ function registerSlashCommands() {
                 defaultValue: 'all',
             }),
         ],
+        returns: ARGUMENT_TYPE.STRING,
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'scene-convert-rememory',
+        callback: slashConvertRememory,
+        helpString: 'Convert ReMemory extension scenes in the current chat to Scene Fold scenes.',
         returns: ARGUMENT_TYPE.STRING,
     }));
 }
