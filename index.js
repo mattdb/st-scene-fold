@@ -1363,6 +1363,26 @@ jQuery(async () => {
     eventSource.on(eventTypes.USER_MESSAGE_RENDERED, onMessageRendered);
     eventSource.on(eventTypes.MESSAGE_DELETED, onMessageDeleted);
     eventSource.on(eventTypes.MESSAGE_SWIPED, onMessageSwiped);
+    eventSource.on(eventTypes.MORE_MESSAGES_LOADED, () => {
+        const ctx = SillyTavern.getContext();
+        const s = getSettings(ctx.extensionSettings);
+        if (!s.enabled) return;
+
+        // Remember the earliest summary before new batch gets visuals applied
+        const prevFirstSummary = document.querySelector('#chat .mes.scene-fold-summary');
+        const anchorMesId = prevFirstSummary?.getAttribute('mesid');
+
+        applyAllFoldVisuals(ctx);
+        updateToolbar(ctx, queue);
+
+        // Scroll back to the summary that was previously at the top
+        if (anchorMesId !== null) {
+            const anchor = document.querySelector(`#chat .mes[mesid="${anchorMesId}"]`);
+            if (anchor) {
+                anchor.scrollIntoView({ block: 'start' });
+            }
+        }
+    });
 
     // ─── MutationObserver for Message Duplication ────────────────────────
     // ST's message duplication (structuredClone + splice + DOM insert) does
