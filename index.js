@@ -43,7 +43,7 @@ import { SlashCommand } from '../../../../scripts/slash-commands/SlashCommand.js
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../../scripts/slash-commands/SlashCommandArgument.js';
 
 const MODULE_NAME = 'scene_fold';
-const EXTENSION_NAME = 'scene-fold';
+const EXTENSION_NAME = new URL(import.meta.url).pathname.split('/').slice(-2, -1)[0];
 
 /** @type {SummarizationQueue} */
 let queue;
