@@ -7,6 +7,7 @@
 
 import {
     getSceneFoldData,
+    getScenesInOrder,
     findMessageIndexByUUID,
     getAutoStartIndex,
     getMessageScenes,
@@ -27,6 +28,9 @@ let autoStartIndex = null;
 
 /** @type {boolean} Whether user has manually overridden auto-start */
 let autoStartOverridden = false;
+
+/** @type {((e: KeyboardEvent) => void)|null} */
+let keyboardHandler = null;
 
 /**
  * Get the jQuery chat container element.
@@ -97,6 +101,24 @@ function enterSelectionMode(context, settings) {
     // Show floating action bar
     showActionBar();
     updateActionBar();
+
+    // Attach keyboard shortcuts for selection mode
+    keyboardHandler = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            exitSelectionMode();
+            document.dispatchEvent(new CustomEvent('scene-fold-selection-exited'));
+        } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            if (selectionStart !== null && selectionEnd !== null) {
+                e.preventDefault();
+                e.stopPropagation();
+                document.dispatchEvent(new CustomEvent('scene-fold-selection-confirmed'));
+            }
+        }
+    };
+    document.addEventListener('keydown', keyboardHandler, true);
 }
 
 /**
@@ -108,6 +130,12 @@ export function exitSelectionMode() {
     selectionEnd = null;
     autoStartIndex = null;
     autoStartOverridden = false;
+
+    // Remove keyboard handler
+    if (keyboardHandler) {
+        document.removeEventListener('keydown', keyboardHandler, true);
+        keyboardHandler = null;
+    }
 
     getChatElement().removeClass('scene-fold-selection-mode');
     getChatElement().find('.mes').removeClass('scene-fold-selected scene-fold-selection-start scene-fold-selection-end');
@@ -252,10 +280,9 @@ export function injectMessageButtons(context) {
             );
         }
 
-        // "Select scene..." — enters selection mode with this message as the end
         extraButtons.prepend(
             `<div class="mes_button scene-fold-mes-btn scene-fold-enter-selection"
-                  data-mesid="${mesId}" title="Enter scene selection mode">
+                  data-mesid="${mesId}" title="Start scene selection from here">
                 <i class="fa-solid fa-object-group"></i>
             </div>`,
         );
@@ -292,7 +319,7 @@ export function injectSingleMessageButtons(context, messageId) {
 
     extraButtons.prepend(
         `<div class="mes_button scene-fold-mes-btn scene-fold-enter-selection"
-              data-mesid="${messageId}" title="Enter scene selection mode">
+              data-mesid="${messageId}" title="Start scene selection from here">
             <i class="fa-solid fa-object-group"></i>
         </div>`,
     );
@@ -376,6 +403,11 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
         summaryEl.addClass('scene-fold-summary');
 
         const count = scene.sourceMessageUUIDs.length;
+        const staleHtml = scene.stale ? `
+            <span class="scene-fold-stale-badge" title="Source messages modified since summarization. Consider re-summarizing.">
+                <i class="fa-solid fa-triangle-exclamation"></i> Stale
+            </span>
+        ` : '';
         const toggleHtml = `
             <div class="scene-fold-inline-actions" data-scene-id="${scene.id}">
                 <div class="scene-fold-inline-actions-row">
@@ -383,9 +415,13 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
                         <span class="scene-fold-toggle-icon fa-solid ${scene.folded ? 'fa-chevron-right' : 'fa-chevron-down'}"></span>
                         <span class="scene-fold-badge">${count} message${count !== 1 ? 's' : ''} ${scene.folded ? 'folded' : 'expanded'}</span>
                     </div>
+                    ${staleHtml}
                     <div class="scene-fold-inline-buttons">
                         <button class="scene-fold-inline-btn scene-fold-edit-prompt-btn" data-scene-id="${scene.id}" title="Edit scene prompt">
                             <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="scene-fold-inline-btn scene-fold-undo-btn" data-scene-id="${scene.id}" title="Undo summarization (restore original messages)">
+                            <i class="fa-solid fa-up-down"></i>
                         </button>
                         <button class="scene-fold-inline-btn scene-fold-retry-btn" data-scene-id="${scene.id}" title="Re-summarize">
                             <i class="fa-solid fa-rotate-right"></i>
@@ -402,7 +438,7 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
     }
 
     // Inline controls for scenes that haven't been summarized yet
-    if (scene.status === 'defined' || scene.status === 'error' || scene.status === 'summarizing') {
+    if (scene.status === 'defined' || scene.status === 'error' || scene.status === 'summarizing' || scene.status === 'queued') {
         const firstIdx = findMessageIndexByUUID(chat, scene.sourceMessageUUIDs[0], uuidIndex);
         if (firstIdx === -1) return;
 
@@ -413,6 +449,9 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
         if (scene.status === 'defined') {
             statusText = `Scene: ${count} message${count !== 1 ? 's' : ''}`;
             statusClass = '';
+        } else if (scene.status === 'queued') {
+            statusText = 'Queued...';
+            statusClass = 'scene-fold-status-queued';
         } else if (scene.status === 'summarizing') {
             statusText = 'Summarizing...';
             statusClass = 'scene-fold-status-active';
@@ -422,6 +461,7 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
         }
 
         const canSummarize = scene.status === 'defined' || scene.status === 'error';
+        const canCancel = scene.status === 'queued' || scene.status === 'summarizing';
         const actionsHtml = `
             <div class="scene-fold-inline-actions ${statusClass}" data-scene-id="${scene.id}">
                 <div class="scene-fold-inline-actions-row">
@@ -433,6 +473,11 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
                         ${canSummarize ? `
                             <button class="scene-fold-inline-btn scene-fold-summarize-btn" data-scene-id="${scene.id}" title="Summarize this scene">
                                 <i class="fa-solid fa-wand-magic-sparkles"></i> Summarize
+                            </button>
+                        ` : ''}
+                        ${canCancel ? `
+                            <button class="scene-fold-inline-btn scene-fold-cancel-btn" data-scene-id="${scene.id}" title="Cancel">
+                                <i class="fa-solid fa-xmark"></i> Cancel
                             </button>
                         ` : ''}
                         <button class="scene-fold-inline-btn scene-fold-delete-btn" data-scene-id="${scene.id}" title="Remove scene">
@@ -462,4 +507,97 @@ export function toggleFold(context, sceneId) {
 
     // Re-apply visuals
     applyAllFoldVisuals(context);
+}
+
+// ─── Chat Toolbar ───────────────────────────────────────────────────────────
+
+/**
+ * Create or update the sticky toolbar at the top of the chat column.
+ * Shows scene counts + action buttons when idle, progress + cancel when processing.
+ * @param {object} context
+ * @param {import('./summarization-queue.js').SummarizationQueue} queue
+ */
+export function updateToolbar(context, queue) {
+    const { chat, chatMetadata } = context;
+
+    // Ensure toolbar element exists
+    let toolbar = $('#scene-fold-toolbar');
+    if (toolbar.length === 0) {
+        toolbar = $(`
+            <div id="scene-fold-toolbar" class="scene-fold-toolbar">
+                <div class="scene-fold-toolbar-idle">
+                    <span class="scene-fold-toolbar-info"></span>
+                    <div class="scene-fold-toolbar-buttons">
+                        <button class="scene-fold-toolbar-btn scene-fold-toolbar-select-mode" title="Enter scene selection mode">
+                            <i class="fa-solid fa-object-group"></i> Select Scene
+                        </button>
+                        <button class="scene-fold-toolbar-btn scene-fold-toolbar-summarize-all" title="Summarize all pending scenes">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Summarize All
+                        </button>
+                    </div>
+                </div>
+                <div class="scene-fold-toolbar-active" style="display:none">
+                    <span class="scene-fold-toolbar-progress-label"></span>
+                    <div class="scene-fold-progress-bar">
+                        <div class="scene-fold-progress-fill"></div>
+                    </div>
+                    <button class="scene-fold-toolbar-btn scene-fold-cancel-all" title="Cancel all queued summarizations">
+                        <i class="fa-solid fa-stop"></i> Cancel All
+                    </button>
+                </div>
+            </div>
+        `);
+        getChatElement().prepend(toolbar);
+    }
+
+    if (!chat || chat.length === 0) {
+        toolbar.hide();
+        return;
+    }
+    toolbar.show();
+
+    const scenes = getScenesInOrder(chatMetadata, chat);
+    const isProcessing = queue?.isProcessing;
+
+    if (isProcessing) {
+        // Active state: show progress
+        toolbar.find('.scene-fold-toolbar-idle').hide();
+        toolbar.find('.scene-fold-toolbar-active').show();
+
+        const progress = queue.progress;
+        const pct = progress.total > 0 ? Math.round((progress.current - 1) / progress.total * 100) : 0;
+        toolbar.find('.scene-fold-toolbar-progress-label').text(`Processing ${progress.current}/${progress.total}...`);
+        toolbar.find('.scene-fold-progress-fill').css('width', `${pct}%`);
+    } else {
+        // Idle state: show scene counts + buttons
+        toolbar.find('.scene-fold-toolbar-idle').show();
+        toolbar.find('.scene-fold-toolbar-active').hide();
+
+        const counts = { defined: 0, completed: 0, error: 0, queued: 0 };
+        for (const scene of scenes) {
+            if (counts[scene.status] !== undefined) counts[scene.status]++;
+        }
+
+        const parts = [];
+        if (counts.completed > 0) parts.push(`${counts.completed} completed`);
+        if (counts.defined > 0) parts.push(`${counts.defined} defined`);
+        if (counts.error > 0) parts.push(`${counts.error} error`);
+
+        const infoText = scenes.length === 0
+            ? 'No scenes'
+            : `${scenes.length} scene${scenes.length !== 1 ? 's' : ''}: ${parts.join(', ')}`;
+        toolbar.find('.scene-fold-toolbar-info').text(infoText);
+
+        // Update select mode button text
+        const selectBtn = toolbar.find('.scene-fold-toolbar-select-mode');
+        if (selectionModeActive) {
+            selectBtn.html('<i class="fa-solid fa-xmark"></i> Exit Selection');
+        } else {
+            selectBtn.html('<i class="fa-solid fa-object-group"></i> Select Scene');
+        }
+
+        // Disable Summarize All if no pending scenes
+        const hasPending = counts.defined > 0 || counts.error > 0;
+        toolbar.find('.scene-fold-toolbar-summarize-all').prop('disabled', !hasPending);
+    }
 }

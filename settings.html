@@ -25,19 +25,9 @@
                     placeholder="Enter the default prompt used when summarizing scenes..."></textarea>
             </div>
 
-            <hr />
-
             <div class="scene-fold-settings-section">
-                <div class="scene-fold-controls">
-                    <button id="scene_fold_select_mode_btn" class="menu_button">
-                        <i class="fa-solid fa-object-group"></i>
-                        <span>Scene Selection Mode</span>
-                    </button>
-                    <button id="scene_fold_summarize_all_btn" class="menu_button" title="Summarize all defined scenes">
-                        <i class="fa-solid fa-layer-group"></i>
-                        <span>Summarize All</span>
-                    </button>
-                </div>
+                <label for="scene_fold_max_retries">Retries on blank summary (0-10):</label>
+                <input type="number" id="scene_fold_max_retries" class="text_pole" min="0" max="10" step="1" />
             </div>
 
             <hr />

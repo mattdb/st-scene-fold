@@ -241,6 +241,65 @@ export function updateScene(chatMetadata, sceneId, updates) {
 }
 
 /**
+ * Reconcile duplicated messages: when a message is duplicated, the copy shares
+ * the same scene_fold_uuid. Detect duplicates and give each a fresh UUID,
+ * adding the new UUID to the appropriate scene(s).
+ * @param {object} chatMetadata
+ * @param {Array} chat
+ * @param {Function} uuidv4Fn - UUID generator
+ * @returns {number} Number of messages fixed
+ */
+export function reconcileDuplicatedMessages(chatMetadata, chat, uuidv4Fn) {
+    const data = getSceneFoldData(chatMetadata);
+    let fixedCount = 0;
+
+    // Build a map of UUID -> list of indices where it appears
+    const uuidOccurrences = new Map();
+    for (let i = 0; i < chat.length; i++) {
+        const uuid = chat[i]?.extra?.scene_fold_uuid;
+        if (!uuid) continue;
+        if (!uuidOccurrences.has(uuid)) {
+            uuidOccurrences.set(uuid, []);
+        }
+        uuidOccurrences.get(uuid).push(i);
+    }
+
+    for (const [originalUUID, indices] of uuidOccurrences) {
+        if (indices.length <= 1) continue;
+
+        // First occurrence keeps the original UUID; later occurrences are duplicates
+        for (let d = 1; d < indices.length; d++) {
+            const dupIdx = indices[d];
+            const dupMsg = chat[dupIdx];
+            const newUUID = uuidv4Fn();
+
+            // Assign fresh UUID
+            dupMsg.extra.scene_fold_uuid = newUUID;
+
+            // Find which scene(s) the original belongs to and add the duplicate
+            const sceneIds = dupMsg.extra.scene_fold_scenes || [];
+            for (const sceneId of sceneIds) {
+                const scene = data.scenes[sceneId];
+                if (!scene) continue;
+
+                // Insert new UUID right after the original in sourceMessageUUIDs
+                const origPos = scene.sourceMessageUUIDs.indexOf(originalUUID);
+                if (origPos !== -1) {
+                    scene.sourceMessageUUIDs.splice(origPos + 1, 0, newUUID);
+                } else {
+                    scene.sourceMessageUUIDs.push(newUUID);
+                }
+            }
+
+            fixedCount++;
+            console.log(`[Scene Fold] Fixed duplicated message: assigned new UUID ${newUUID.slice(0, 8)}... (was ${originalUUID.slice(0, 8)}...)`);
+        }
+    }
+
+    return fixedCount;
+}
+
+/**
  * Check if a message (by chat index) is part of any scene.
  * @param {Array} chat
  * @param {number} messageIndex
@@ -249,6 +308,74 @@ export function updateScene(chatMetadata, sceneId, updates) {
 export function getMessageScenes(chat, messageIndex) {
     const msg = chat[messageIndex];
     return msg?.extra?.scene_fold_scenes || [];
+}
+
+/**
+ * Reconcile all scenes against the current chat state after message deletion.
+ * Removes orphaned UUIDs from scenes. Deletes scenes with no remaining sources.
+ * Resets scenes whose summary message was deleted.
+ * @param {object} chatMetadata
+ * @param {Array} chat
+ * @returns {{ modifiedScenes: string[], deletedScenes: string[], summaryLost: string[] }}
+ */
+export function reconcileScenesAfterDeletion(chatMetadata, chat) {
+    const data = getSceneFoldData(chatMetadata);
+    const uuidIndex = buildUUIDIndex(chat);
+    const result = { modifiedScenes: [], deletedScenes: [], summaryLost: [] };
+
+    for (const [sceneId, scene] of Object.entries(data.scenes)) {
+        let modified = false;
+
+        // Check source message UUIDs
+        const validSources = scene.sourceMessageUUIDs.filter(uuid => {
+            return findMessageIndexByUUID(chat, uuid, uuidIndex) !== -1;
+        });
+
+        if (validSources.length !== scene.sourceMessageUUIDs.length) {
+            modified = true;
+            scene.sourceMessageUUIDs = validSources;
+        }
+
+        // If no source messages remain, delete the scene entirely
+        if (validSources.length === 0) {
+            if (scene.summaryMessageUUID) {
+                const summaryIdx = findMessageIndexByUUID(chat, scene.summaryMessageUUID, uuidIndex);
+                if (summaryIdx !== -1) {
+                    delete chat[summaryIdx].extra.scene_fold_scene_id;
+                    delete chat[summaryIdx].extra.scene_fold_role;
+                }
+            }
+            delete data.scenes[sceneId];
+            result.deletedScenes.push(sceneId);
+            continue;
+        }
+
+        // Check summary message UUID
+        if (scene.summaryMessageUUID) {
+            const summaryIdx = findMessageIndexByUUID(chat, scene.summaryMessageUUID, uuidIndex);
+            if (summaryIdx === -1) {
+                // Summary was deleted — reset scene to defined, un-hide sources
+                scene.summaryMessageUUID = null;
+                scene.status = 'defined';
+                scene.folded = false;
+                result.summaryLost.push(sceneId);
+                modified = true;
+
+                for (const uuid of scene.sourceMessageUUIDs) {
+                    const idx = findMessageIndexByUUID(chat, uuid, uuidIndex);
+                    if (idx !== -1) {
+                        chat[idx].is_system = false;
+                    }
+                }
+            }
+        }
+
+        if (modified && !result.deletedScenes.includes(sceneId)) {
+            result.modifiedScenes.push(sceneId);
+        }
+    }
+
+    return result;
 }
 
 /**

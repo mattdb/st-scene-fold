@@ -3,7 +3,9 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && grep -l \"\"mes_button\\\\|extraMesButtons\\\\|contextmenu\\\\|right.*click\"\" {} 2>/dev/null')"
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && grep -l \"\"mes_button\\\\|extraMesButtons\\\\|contextmenu\\\\|right.*click\"\" {} 2>/dev/null')",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.sillytavern.app)"
     ]
   }
 }
