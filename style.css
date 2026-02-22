@@ -114,6 +114,26 @@
     opacity: 0.7;
 }
 
+/* ─── Collapse Tail (last source message) ──────────────────────────────────── */
+
+.scene-fold-collapse-tail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    margin-top: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    color: var(--SmartThemeBodyColor, #aaa);
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+    user-select: none;
+}
+
+.scene-fold-collapse-tail:hover {
+    opacity: 1;
+}
+
 /* ─── Inline Scene Controls (in chat messages) ────────────────────────────── */
 
 .scene-fold-inline-actions {

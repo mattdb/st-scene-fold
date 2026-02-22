@@ -1259,6 +1259,26 @@ jQuery(async () => {
         renderSceneList(ctx);
     });
 
+    $(document).on('click', '.scene-fold-collapse-tail', function () {
+        const sceneId = $(this).data('scene-id');
+        const ctx = SillyTavern.getContext();
+        const scene = getScene(ctx.chatMetadata, sceneId);
+        toggleFold(ctx, sceneId);
+        ctx.saveMetadataDebounced();
+        renderSceneList(ctx);
+
+        // Scroll to the summary message so it's visible after collapse
+        if (scene?.summaryMessageUUID) {
+            const summaryIdx = findMessageIndexByUUID(ctx.chat, scene.summaryMessageUUID);
+            if (summaryIdx !== -1) {
+                const summaryEl = document.querySelector(`.mes[mesid="${summaryIdx}"]`);
+                if (summaryEl) {
+                    summaryEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        }
+    });
+
     // ─── Message Action Button Handlers ────────────────────────────────
 
     // "Scene to here" — one-click scene creation from auto-start to this message

@@ -342,6 +342,7 @@ export function applyAllFoldVisuals(context) {
     chatEl.find('.scene-fold-toggle').remove();
     chatEl.find('.scene-fold-badge').remove();
     chatEl.find('.scene-fold-scene-border').remove();
+    chatEl.find('.scene-fold-collapse-tail').remove();
     chatEl.find('.scene-fold-status-badge').remove();
     chatEl.find('.scene-fold-inline-actions').remove();
 
@@ -367,6 +368,7 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
     }
 
     // Mark source messages
+    const lastSourceUUID = scene.sourceMessageUUIDs[scene.sourceMessageUUIDs.length - 1];
     for (const uuid of scene.sourceMessageUUIDs) {
         const idx = findMessageIndexByUUID(chat, uuid, uuidIndex);
         if (idx === -1) continue;
@@ -381,6 +383,19 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
         // Add scene color border
         if (!msgEl.find('.scene-fold-scene-border').length) {
             msgEl.prepend(`<div class="scene-fold-scene-border" data-scene-id="${scene.id}"></div>`);
+        }
+
+        // Add collapse control on the last source message of completed, expanded scenes
+        if (uuid === lastSourceUUID && scene.status === 'completed' && !scene.folded) {
+            if (!msgEl.find('.scene-fold-collapse-tail').length) {
+                const count = scene.sourceMessageUUIDs.length;
+                msgEl.find('.mes_text').after(`
+                    <div class="scene-fold-collapse-tail" data-scene-id="${scene.id}">
+                        <span class="scene-fold-toggle-icon fa-solid fa-chevron-up"></span>
+                        <span>Collapse ${count} message${count !== 1 ? 's' : ''}</span>
+                    </div>
+                `);
+            }
         }
     }
 
