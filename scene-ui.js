@@ -539,7 +539,7 @@ export function updateToolbar(context, queue) {
     let toolbar = $('#scene-fold-toolbar');
     if (toolbar.length === 0) {
         toolbar = $(`
-            <div id="scene-fold-toolbar" class="scene-fold-toolbar">
+            <div id="scene-fold-toolbar" class="scene-fold-toolbar" style="display:none"
                 <div class="scene-fold-toolbar-idle">
                     <span class="scene-fold-toolbar-info"></span>
                     <div class="scene-fold-toolbar-buttons">
@@ -566,13 +566,28 @@ export function updateToolbar(context, queue) {
     }
 
     if (!chat || chat.length === 0) {
-        toolbar.hide();
+        toolbar.fadeOut(200);
         return;
     }
-    toolbar.show();
 
     const scenes = getScenesInOrder(chatMetadata, chat);
     const isProcessing = queue?.isProcessing;
+
+    // Count scenes by status
+    const counts = { defined: 0, completed: 0, error: 0, queued: 0 };
+    for (const scene of scenes) {
+        if (counts[scene.status] !== undefined) counts[scene.status]++;
+    }
+
+    const hasPending = counts.defined > 0 || counts.error > 0 || counts.queued > 0;
+    const shouldShow = hasPending || isProcessing;
+
+    if (shouldShow) {
+        if (!toolbar.is(':visible')) toolbar.fadeIn(200);
+    } else {
+        if (toolbar.is(':visible')) toolbar.fadeOut(200);
+        return;
+    }
 
     if (isProcessing) {
         // Active state: show progress
@@ -587,11 +602,6 @@ export function updateToolbar(context, queue) {
         // Idle state: show scene counts + buttons
         toolbar.find('.scene-fold-toolbar-idle').show();
         toolbar.find('.scene-fold-toolbar-active').hide();
-
-        const counts = { defined: 0, completed: 0, error: 0, queued: 0 };
-        for (const scene of scenes) {
-            if (counts[scene.status] !== undefined) counts[scene.status]++;
-        }
 
         const parts = [];
         if (counts.completed > 0) parts.push(`${counts.completed} completed`);
@@ -611,8 +621,6 @@ export function updateToolbar(context, queue) {
             selectBtn.html('<i class="fa-solid fa-object-group"></i> Select Scene');
         }
 
-        // Disable Summarize All if no pending scenes
-        const hasPending = counts.defined > 0 || counts.error > 0;
         toolbar.find('.scene-fold-toolbar-summarize-all').prop('disabled', !hasPending);
     }
 }
