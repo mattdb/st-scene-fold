@@ -1,0 +1,53 @@
+<div class="scene-fold-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Scene Fold</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="scene-fold-settings-section">
+                <label class="checkbox_label" for="scene_fold_enabled">
+                    <input type="checkbox" id="scene_fold_enabled" />
+                    <span>Enable Scene Fold</span>
+                </label>
+            </div>
+
+            <div class="scene-fold-settings-section">
+                <label class="checkbox_label" for="scene_fold_smart_auto_start">
+                    <input type="checkbox" id="scene_fold_smart_auto_start" />
+                    <span>Smart auto-start (start scene after last summary)</span>
+                </label>
+            </div>
+
+            <div class="scene-fold-settings-section">
+                <label for="scene_fold_default_prompt">Default summarization prompt:</label>
+                <textarea id="scene_fold_default_prompt" class="text_pole" rows="4"
+                    placeholder="Enter the default prompt used when summarizing scenes..."></textarea>
+            </div>
+
+            <hr />
+
+            <div class="scene-fold-settings-section">
+                <div class="scene-fold-controls">
+                    <button id="scene_fold_select_mode_btn" class="menu_button">
+                        <i class="fa-solid fa-object-group"></i>
+                        <span>Scene Selection Mode</span>
+                    </button>
+                    <button id="scene_fold_summarize_all_btn" class="menu_button" title="Summarize all defined scenes">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span>Summarize All</span>
+                    </button>
+                </div>
+            </div>
+
+            <hr />
+
+            <div class="scene-fold-settings-section">
+                <b>Scenes in this chat:</b>
+                <div id="scene_fold_scene_list" class="scene-fold-scene-list">
+                    <i>No scenes defined yet.</i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
