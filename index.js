@@ -1314,6 +1314,7 @@ jQuery(async () => {
         applyAllFoldVisuals(ctx);
         injectMessageButtons(ctx);
         renderSceneList(ctx);
+        updateToolbar(ctx, queue);
 
         toastr.success(`Scene created with ${scene.sourceMessageUUIDs.length} messages`);
     });

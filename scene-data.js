@@ -196,23 +196,24 @@ export function getScenesInOrder(chatMetadata, chat) {
  */
 export function getAutoStartIndex(chatMetadata, chat) {
     const data = getSceneFoldData(chatMetadata);
-    const completedScenes = Object.values(data.scenes)
-        .filter(s => s.status === 'completed' && s.summaryMessageUUID);
+    const allScenes = Object.values(data.scenes);
 
-    if (completedScenes.length === 0) return 0;
+    if (allScenes.length === 0) return 0;
 
-    // Find the last source message across all completed scenes
+    // Find the last message belonging to ANY scene (not just completed ones)
     let maxIndex = -1;
-    for (const scene of completedScenes) {
+    for (const scene of allScenes) {
         for (const uuid of scene.sourceMessageUUIDs) {
             const idx = findMessageIndexByUUID(chat, uuid);
-            if (idx > maxIndex) {
-                maxIndex = idx;
-            }
+            if (idx > maxIndex) maxIndex = idx;
+        }
+        if (scene.summaryMessageUUID) {
+            const idx = findMessageIndexByUUID(chat, scene.summaryMessageUUID);
+            if (idx > maxIndex) maxIndex = idx;
         }
     }
 
-    // Auto-start at the message after the last summarized message
+    // Auto-start at the message after the last scene message
     return maxIndex >= 0 ? maxIndex + 1 : 0;
 }
 
