@@ -482,3 +482,17 @@
     margin-bottom: 10px;
 }
 
+.scene-fold-template-hint {
+    display: block;
+    margin: 2px 0 4px;
+    opacity: 0.6;
+    font-size: 0.85em;
+}
+
+.scene-fold-template-hint code {
+    background: rgba(100, 180, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.95em;
+}
+

@@ -20,9 +20,23 @@
             </div>
 
             <div class="scene-fold-settings-section">
-                <label for="scene_fold_default_prompt">Default summarization prompt:</label>
-                <textarea id="scene_fold_default_prompt" class="text_pole" rows="4"
-                    placeholder="Enter the default prompt used when summarizing scenes..."></textarea>
+                <label for="scene_fold_default_prompt">Summarization prompt template:</label>
+                <small class="scene-fold-template-hint">
+                    Use <code>{{content}}</code> for scene messages,
+                    <code>{{additional_guidance}}</code> for per-scene notes,
+                    <code>{{user}}</code> / <code>{{char}}</code> for names.
+                </small>
+                <textarea id="scene_fold_default_prompt" class="text_pole" rows="6"
+                    placeholder="Enter the prompt template used when summarizing scenes..."></textarea>
+            </div>
+
+            <div class="scene-fold-settings-section">
+                <label for="scene_fold_guidance_prefix">Additional guidance introduction:</label>
+                <small class="scene-fold-template-hint">
+                    Precedes per-scene notes when <code>{{additional_guidance}}</code> is used.
+                </small>
+                <input type="text" id="scene_fold_guidance_prefix" class="text_pole"
+                    placeholder="Additional guidance for this scene:" />
             </div>
 
             <div class="scene-fold-settings-section">

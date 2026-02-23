@@ -41,6 +41,7 @@ import { SummarizationQueue } from './summarization-queue.js';
 import { SlashCommandParser } from '../../../../scripts/slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../../scripts/slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../../scripts/slash-commands/SlashCommandArgument.js';
+import { addOneMessage, updateViewMessageIds, substituteParamsExtended } from '../../../../script.js';
 
 const MODULE_NAME = 'scene_fold';
 const EXTENSION_NAME = new URL(import.meta.url).pathname.split('/').slice(-2, -1)[0];
@@ -49,10 +50,13 @@ const EXTENSION_NAME = new URL(import.meta.url).pathname.split('/').slice(-2, -1
 let queue;
 
 /** Default extension settings */
+const DEFAULT_GUIDANCE_PREFIX = 'Additional guidance for this scene:';
+
 const DEFAULT_SETTINGS = {
     enabled: true,
     smartAutoStart: true,
     defaultPrompt: getDefaultSummarizationPrompt(),
+    guidancePrefix: DEFAULT_GUIDANCE_PREFIX,
     maxRetries: 2,
 };
 
@@ -77,6 +81,7 @@ function loadSettingsUI(context) {
     $('#scene_fold_enabled').prop('checked', settings.enabled);
     $('#scene_fold_smart_auto_start').prop('checked', settings.smartAutoStart);
     $('#scene_fold_default_prompt').val(settings.defaultPrompt);
+    $('#scene_fold_guidance_prefix').val(settings.guidancePrefix ?? DEFAULT_GUIDANCE_PREFIX);
     $('#scene_fold_max_retries').val(settings.maxRetries ?? DEFAULT_SETTINGS.maxRetries);
 }
 
@@ -226,16 +231,21 @@ async function summarizeScene(context, sceneId, signal = null) {
 
         console.log(`[Scene Fold] Built prompt from ${sourceTexts.length} messages (indices: ${sourceIndices.join(', ')})`);
 
-        // Compose the prompt — generateRaw is bare (no chat history), so we pass
-        // the summarization instructions as the system prompt and scene text as the user prompt.
-        // Custom prompt is additive: appended to the default prompt as extra guidance.
-        let systemPrompt = settings.defaultPrompt;
-        if (scene.customPrompt) {
-            systemPrompt += '\n\nAdditional guidance for this scene:\n' + scene.customPrompt;
-        }
+        // Compose the prompt from the template.
+        // {{content}} = scene messages, {{additional_guidance}} = per-scene custom prompt,
+        // {{user}}/{{char}}/etc. are handled by ST's substituteParamsExtended.
         const sceneText = sourceTexts.join('\n\n');
+        const prefix = settings.guidancePrefix || DEFAULT_GUIDANCE_PREFIX;
+        const additionalGuidance = scene.customPrompt
+            ? `\n${prefix}\n${scene.customPrompt}\n`
+            : '';
 
-        console.log(`[Scene Fold] Calling generateRaw (prompt length: ${sceneText.length}, systemPrompt length: ${systemPrompt.length})...`);
+        const prompt = substituteParamsExtended(settings.defaultPrompt, {
+            content: sceneText,
+            additional_guidance: additionalGuidance,
+        });
+
+        console.log(`[Scene Fold] Calling generateRaw (prompt length: ${prompt.length})...`);
 
         // Call LLM with retries for transient failures (blank responses, timeouts).
         // Content-filter refusals and auth errors are not retried.
@@ -248,7 +258,7 @@ async function summarizeScene(context, sceneId, signal = null) {
             let result;
             try {
                 console.log(`[Scene Fold] generateRaw attempt ${attempt}/${maxAttempts}...`);
-                result = await generateRaw({ prompt: sceneText, systemPrompt });
+                result = await generateRaw({ prompt });
             } catch (genError) {
                 if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
@@ -312,6 +322,16 @@ async function summarizeScene(context, sceneId, signal = null) {
         // Insert into chat array at the correct position
         chat.splice(firstSourceIdx, 0, summaryMessage);
 
+        // Render the new summary message in the DOM without a full reload.
+        // DOM still has old mesids, so insertBefore the element at firstSourceIdx
+        // (the first source message, which hasn't shifted in the DOM yet).
+        addOneMessage(summaryMessage, {
+            insertBefore: firstSourceIdx,
+            scroll: false,
+            showSwipes: false,
+        });
+        updateViewMessageIds();
+
         // Mark source messages as hidden from prompts (indices shifted by 1 due to insertion)
         for (const uuid of scene.sourceMessageUUIDs) {
             const idx = findMessageIndexByUUID(chat, uuid);
@@ -326,19 +346,15 @@ async function summarizeScene(context, sceneId, signal = null) {
             summaryMessageUUID: summaryMessage.extra.scene_fold_uuid,
         });
 
-        // Persist and reload chat to correctly render all messages with proper mesid values
-        console.log('[Scene Fold] Saving chat and reloading...');
+        // Persist and apply visuals
         await saveChat();
         saveMetadataDebounced();
-        await context.reloadCurrentChat();
 
-        // Re-apply fold visuals after reload (context needs to be refreshed)
         const freshContext = SillyTavern.getContext();
         applyAllFoldVisuals(freshContext);
         renderSceneList(freshContext);
 
         console.log(`[Scene Fold] Scene ${sceneId} summarization complete`);
-        toastr.success(`Scene summarized (${scene.sourceMessageUUIDs.length} messages folded)`);
     } catch (error) {
         if (error.name === 'AbortError') {
             console.log(`[Scene Fold] Summarization cancelled for scene ${sceneId}`);
@@ -378,7 +394,10 @@ async function prepareForRetry(context, sceneId) {
     if (scene.summaryMessageUUID) {
         const summaryIdx = findMessageIndexByUUID(chat, scene.summaryMessageUUID);
         if (summaryIdx !== -1) {
+            // Remove from DOM first, then from chat array
+            $(`.mes[mesid="${summaryIdx}"]`).remove();
             chat.splice(summaryIdx, 1);
+            updateViewMessageIds();
         }
     }
 
@@ -400,7 +419,7 @@ async function prepareForRetry(context, sceneId) {
 
     await saveChat();
     saveMetadataDebounced();
-    await context.reloadCurrentChat();
+    applyAllFoldVisuals(SillyTavern.getContext());
 }
 
 // ─── Memory Extension Conflict Detection ─────────────────────────────────────
@@ -680,7 +699,6 @@ async function slashSceneSummarize(_namedArgs, unnamedArgs) {
             return '0';
         }
         queue.addAll(pending.map(s => s.id));
-        toastr.info(`Queued ${pending.length} scene(s) for summarization`);
         return String(pending.length);
     } else {
         const sceneId = resolveSceneArg(ctx.chatMetadata, ctx.chat, arg);
@@ -1009,9 +1027,7 @@ jQuery(async () => {
             if (scene?._needsRetry) {
                 delete scene._needsRetry;
                 await prepareForRetry(ctx, sceneId);
-                // Re-fetch context after reload
-                const freshCtx = SillyTavern.getContext();
-                await summarizeScene(freshCtx, sceneId, signal);
+                await summarizeScene(SillyTavern.getContext(), sceneId, signal);
             } else {
                 await summarizeScene(ctx, sceneId, signal);
             }
@@ -1044,6 +1060,11 @@ jQuery(async () => {
 
     $('#scene_fold_default_prompt').on('input', function () {
         settings.defaultPrompt = $(this).val();
+        context.saveSettingsDebounced();
+    });
+
+    $('#scene_fold_guidance_prefix').on('input', function () {
+        settings.guidancePrefix = $(this).val();
         context.saveSettingsDebounced();
     });
 
@@ -1175,11 +1196,7 @@ jQuery(async () => {
         const ctx = SillyTavern.getContext();
         const scenes = getScenesInOrder(ctx.chatMetadata, ctx.chat);
         const pendingScenes = scenes.filter(s => s.status === 'defined' || s.status === 'error');
-        if (pendingScenes.length === 0) {
-            toastr.info('No pending scenes to summarize.');
-            return;
-        }
-        toastr.info(`Queuing ${pendingScenes.length} scene(s) for summarization...`);
+        if (pendingScenes.length === 0) return;
         queue.addAll(pendingScenes.map(s => s.id));
     });
 

@@ -539,7 +539,7 @@ export function updateToolbar(context, queue) {
     let toolbar = $('#scene-fold-toolbar');
     if (toolbar.length === 0) {
         toolbar = $(`
-            <div id="scene-fold-toolbar" class="scene-fold-toolbar" style="display:none"
+            <div id="scene-fold-toolbar" class="scene-fold-toolbar" style="display:none">
                 <div class="scene-fold-toolbar-idle">
                     <span class="scene-fold-toolbar-info"></span>
                     <div class="scene-fold-toolbar-buttons">
@@ -595,8 +595,12 @@ export function updateToolbar(context, queue) {
         toolbar.find('.scene-fold-toolbar-active').show();
 
         const progress = queue.progress;
-        const pct = progress.total > 0 ? Math.round((progress.current - 1) / progress.total * 100) : 0;
-        toolbar.find('.scene-fold-toolbar-progress-label').text(`Processing ${progress.current}/${progress.total}...`);
+        const done = progress.current - 1;
+        const pct = progress.total > 0 ? Math.round(done / progress.total * 100) : 0;
+        const remaining = progress.total - done;
+        toolbar.find('.scene-fold-toolbar-progress-label').text(
+            `Summarizing ${progress.current} of ${progress.total} (${remaining} remaining)`,
+        );
         toolbar.find('.scene-fold-progress-fill').css('width', `${pct}%`);
     } else {
         // Idle state: show scene counts + buttons
@@ -604,13 +608,12 @@ export function updateToolbar(context, queue) {
         toolbar.find('.scene-fold-toolbar-active').hide();
 
         const parts = [];
-        if (counts.completed > 0) parts.push(`${counts.completed} completed`);
-        if (counts.defined > 0) parts.push(`${counts.defined} defined`);
-        if (counts.error > 0) parts.push(`${counts.error} error`);
+        if (counts.defined > 0) parts.push(`${counts.defined} pending`);
+        if (counts.error > 0) parts.push(`${counts.error} failed`);
+        if (counts.queued > 0) parts.push(`${counts.queued} queued`);
 
-        const infoText = scenes.length === 0
-            ? 'No scenes'
-            : `${scenes.length} scene${scenes.length !== 1 ? 's' : ''}: ${parts.join(', ')}`;
+        const pendingTotal = counts.defined + counts.error + counts.queued;
+        const infoText = `${pendingTotal} scene${pendingTotal !== 1 ? 's' : ''} awaiting summary`;
         toolbar.find('.scene-fold-toolbar-info').text(infoText);
 
         // Update select mode button text

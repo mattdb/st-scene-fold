@@ -81,15 +81,12 @@ export function getSceneFoldData(chatMetadata) {
 }
 
 /**
- * @returns {string} The default summarization prompt
+ * @returns {string} The default summarization prompt template
  */
 export function getDefaultSummarizationPrompt() {
-    return [
-        'Summarize the following scene from a roleplay conversation.',
-        'Preserve key plot points, character actions, emotional beats, and any important details.',
-        'Write the summary in present tense, third person, as a concise narrative paragraph.',
-        'Do not add commentary or analysis - only summarize what happened.',
-    ].join(' ');
+    return `Summarize the following scene from a roleplay conversation between {{user}} and {{char}}. Preserve key plot points, character actions, emotional beats, and any important details. Write the summary in present tense, third person, as a concise narrative paragraph. Do not add commentary or analysis - only summarize what happened.
+{{additional_guidance}}
+{{content}}`;
 }
 
 /**
