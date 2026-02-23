@@ -794,6 +794,29 @@ async function slashSceneCollapse(_namedArgs, unnamedArgs) {
 }
 
 /**
+ * /scene-next — scroll to the first unsummarized message (the auto-start index).
+ */
+function slashSceneNext() {
+    const ctx = SillyTavern.getContext();
+    const settings = getSettings(ctx.extensionSettings);
+    if (!settings.enabled) return 'Scene Fold is disabled';
+
+    const autoStart = getAutoStartIndex(ctx.chatMetadata, ctx.chat);
+    if (autoStart >= ctx.chat.length) {
+        toastr.info('No unsummarized messages');
+        return '';
+    }
+
+    const el = document.querySelector(`#chat .mes[mesid="${autoStart}"]`);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        toastr.info(`Message ${autoStart} is not loaded in the current view`);
+    }
+    return String(autoStart);
+}
+
+/**
  * /scene-convert-rememory — detect ReMemory scenes and convert to Scene Fold.
  */
 async function slashConvertRememory() {
@@ -999,6 +1022,13 @@ function registerSlashCommands() {
         name: 'scene-convert-rememory',
         callback: slashConvertRememory,
         helpString: 'Convert ReMemory extension scenes in the current chat to Scene Fold scenes.',
+        returns: ARGUMENT_TYPE.STRING,
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'scene-next',
+        callback: slashSceneNext,
+        helpString: 'Scroll to the first unsummarized message (where the next scene would start).',
         returns: ARGUMENT_TYPE.STRING,
     }));
 }
