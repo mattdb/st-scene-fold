@@ -254,7 +254,7 @@ async function summarizeScene(context, sceneId, signal = null) {
 
                 // Classify the error: don't retry content filters, auth, or 4xx errors
                 const errMsg = (genError.message || String(genError)).toLowerCase();
-                const nonRetryable = /content.?filter|refus|safety|moderat|blocked|policy|unauthorized|forbidden|400|401|403|429/.test(errMsg);
+                const nonRetryable = /prohibit|content.?filter|refus|safety|moderat|blocked|policy|unauthorized|forbidden|400|401|403|429/.test(errMsg);
 
                 if (nonRetryable || attempt >= maxAttempts) {
                     throw genError; // Propagate to outer catch
