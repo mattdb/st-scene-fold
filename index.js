@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS = {
     defaultPrompt: getDefaultSummarizationPrompt(),
     guidancePrefix: DEFAULT_GUIDANCE_PREFIX,
     maxRetries: 2,
+    debugOverlay: false,
 };
 
 /**
@@ -83,6 +84,7 @@ function loadSettingsUI(context) {
     $('#scene_fold_default_prompt').val(settings.defaultPrompt);
     $('#scene_fold_guidance_prefix').val(settings.guidancePrefix ?? DEFAULT_GUIDANCE_PREFIX);
     $('#scene_fold_max_retries').val(settings.maxRetries ?? DEFAULT_SETTINGS.maxRetries);
+    $('#scene_fold_debug_overlay').prop('checked', settings.debugOverlay);
 }
 
 /**
@@ -817,6 +819,37 @@ function slashSceneNext() {
 }
 
 /**
+ * /scene-debug — dump all Scene Fold data to browser console.
+ */
+function slashSceneDebug() {
+    const ctx = SillyTavern.getContext();
+    const { chat, chatMetadata } = ctx;
+    const data = getSceneFoldData(chatMetadata);
+
+    const sceneCount = Object.keys(data.scenes).length;
+    console.log('[Scene Fold] Scene index:', structuredClone(data.scenes));
+
+    const taggedMessages = [];
+    for (let i = 0; i < chat.length; i++) {
+        const extra = chat[i]?.extra;
+        if (!extra) continue;
+        if (!extra.scene_fold_uuid && !extra.scene_fold_scenes?.length) continue;
+        taggedMessages.push({
+            index: i,
+            name: chat[i].name,
+            uuid: extra.scene_fold_uuid || null,
+            role: extra.scene_fold_role || null,
+            scenes: extra.scene_fold_scenes || [],
+            scene_id: extra.scene_fold_scene_id || null,
+            is_system: !!chat[i].is_system,
+        });
+    }
+    console.log(`[Scene Fold] Tagged messages (${taggedMessages.length}):`, taggedMessages);
+
+    return `Logged ${sceneCount} scene${sceneCount !== 1 ? 's' : ''}, ${taggedMessages.length} tagged message${taggedMessages.length !== 1 ? 's' : ''} to console`;
+}
+
+/**
  * /scene-convert-rememory — detect ReMemory scenes and convert to Scene Fold.
  */
 async function slashConvertRememory() {
@@ -1031,6 +1064,13 @@ function registerSlashCommands() {
         helpString: 'Scroll to the first unsummarized message (where the next scene would start).',
         returns: ARGUMENT_TYPE.STRING,
     }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'scene-debug',
+        callback: slashSceneDebug,
+        helpString: 'Dump all Scene Fold data (scene index + per-message metadata) to the browser console.',
+        returns: ARGUMENT_TYPE.STRING,
+    }));
 }
 
 // ─── Initialization ──────────────────────────────────────────────────────────
@@ -1103,6 +1143,12 @@ jQuery(async () => {
         settings.maxRetries = isNaN(val) ? DEFAULT_SETTINGS.maxRetries : Math.max(0, Math.min(val, 10));
         $(this).val(settings.maxRetries);
         context.saveSettingsDebounced();
+    });
+
+    $('#scene_fold_debug_overlay').on('change', function () {
+        settings.debugOverlay = $(this).prop('checked');
+        context.saveSettingsDebounced();
+        applyAllFoldVisuals(SillyTavern.getContext());
     });
 
     // ─── Chat Click Handler (Selection Mode) ─────────────────────────────

@@ -336,6 +336,7 @@ export function applyAllFoldVisuals(context) {
     const { chat, chatMetadata } = context;
     const data = getSceneFoldData(chatMetadata);
     const chatEl = getChatElement();
+    const debugOverlay = !!context.extensionSettings?.scene_fold?.debugOverlay;
 
     // Clear all existing fold visuals
     chatEl.find('.mes').removeClass('scene-fold-source scene-fold-hidden scene-fold-summary');
@@ -345,11 +346,39 @@ export function applyAllFoldVisuals(context) {
     chatEl.find('.scene-fold-collapse-tail').remove();
     chatEl.find('.scene-fold-status-badge').remove();
     chatEl.find('.scene-fold-inline-actions').remove();
+    chatEl.find('.scene-fold-debug').remove();
 
     const uuidIndex = buildUUIDIndex(chat);
 
     for (const scene of Object.values(data.scenes)) {
         applySceneFoldVisuals(context, scene, uuidIndex);
+    }
+
+    // Debug overlay pass — show mesid on every message, extra scene metadata when present
+    if (debugOverlay) {
+        chatEl.find('.mes').each(function () {
+            const mesEl = $(this);
+            const mesId = Number(mesEl.attr('mesid'));
+            if (isNaN(mesId)) return;
+
+            const parts = [`mesid=${mesId}`];
+
+            if (chat[mesId]) {
+                const msg = chat[mesId];
+                const extra = msg.extra || {};
+                if (extra.scene_fold_uuid) parts.push(`uuid=${extra.scene_fold_uuid.slice(0, 8)}`);
+                if (extra.scene_fold_role) parts.push(`role=${extra.scene_fold_role}`);
+                if (extra.scene_fold_scenes?.length) {
+                    parts.push(`scenes=[${extra.scene_fold_scenes.map(id => id.slice(0, 8)).join(', ')}]`);
+                }
+                if (extra.scene_fold_scene_id) parts.push(`scene_id=${extra.scene_fold_scene_id.slice(0, 8)}`);
+                parts.push(`is_system=${!!msg.is_system}`);
+            }
+
+            mesEl.find('.mes_block').prepend(
+                `<div class="scene-fold-debug">${parts.join('  |  ')}</div>`,
+            );
+        });
     }
 }
 
