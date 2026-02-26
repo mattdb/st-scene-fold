@@ -1421,6 +1421,7 @@ jQuery(async () => {
         const anchorMesId = prevFirstSummary?.getAttribute('mesid');
 
         applyAllFoldVisuals(ctx);
+        injectMessageButtons(ctx);
         updateToolbar(ctx, queue);
 
         // Scroll back to the summary that was previously at the top
