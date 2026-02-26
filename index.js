@@ -1486,40 +1486,46 @@ jQuery(async () => {
 
     const chatEl = document.getElementById('chat');
     if (chatEl) {
-        const duplicationObserver = new MutationObserver((mutations) => {
-            const ctx = SillyTavern.getContext();
-            const s = getSettings(ctx.extensionSettings);
-            if (!s.enabled || !ctx.chat?.length) return;
+        let childListUpdatePending = false;
+        const childListObserver = new MutationObserver((mutations) => {
+            if (childListUpdatePending) return;
 
-            // Quick filter: only proceed if any added .mes element corresponds
-            // to a chat message that has a scene_fold_uuid (i.e. was part of a
-            // scene). This is O(k) where k = added elements (usually 1), so it
-            // cheaply skips the vast majority of DOM additions.
-            let hasSceneMessage = false;
+            // Check if any .mes elements were actually added or removed
+            let hasMesChange = false;
             for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE || !node.classList?.contains('mes')) continue;
-                    const mesid = Number(node.getAttribute('mesid'));
-                    if (!isNaN(mesid) && ctx.chat[mesid]?.extra?.scene_fold_uuid) {
-                        hasSceneMessage = true;
+                for (const node of [...mutation.addedNodes, ...mutation.removedNodes]) {
+                    if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mes')) {
+                        hasMesChange = true;
                         break;
                     }
                 }
-                if (hasSceneMessage) break;
+                if (hasMesChange) break;
             }
-            if (!hasSceneMessage) return;
+            if (!hasMesChange) return;
 
-            const fixed = reconcileDuplicatedMessages(ctx.chatMetadata, ctx.chat, ctx.uuidv4);
-            if (fixed > 0) {
-                console.log(`[Scene Fold] Detected and fixed ${fixed} duplicated message(s)`);
-                ctx.saveChat();
-                ctx.saveMetadataDebounced();
+            childListUpdatePending = true;
+            requestAnimationFrame(() => {
+                childListUpdatePending = false;
+                const ctx = SillyTavern.getContext();
+                const s = getSettings(ctx.extensionSettings);
+                if (!s.enabled || !ctx.chat?.length) return;
+
+                // Reconcile duplicated scene UUIDs if a scene message was cloned
+                const fixed = reconcileDuplicatedMessages(ctx.chatMetadata, ctx.chat, ctx.uuidv4);
+                if (fixed > 0) {
+                    console.log(`[Scene Fold] Detected and fixed ${fixed} duplicated message(s)`);
+                    ctx.saveChat();
+                    ctx.saveMetadataDebounced();
+                }
+
+                // Always re-apply visuals — mesids shift on insert/delete
                 applyAllFoldVisuals(ctx);
+                injectMessageButtons(ctx);
                 renderSceneList(ctx);
                 updateToolbar(ctx, queue);
-            }
+            });
         });
-        duplicationObserver.observe(chatEl, { childList: true });
+        childListObserver.observe(chatEl, { childList: true });
 
         // Watch for is_system attribute changes (user toggling message visibility)
         // to update the "visible" badge on scene fold controls.
