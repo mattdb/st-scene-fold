@@ -1473,6 +1473,27 @@ jQuery(async () => {
             }
         });
         duplicationObserver.observe(chatEl, { childList: true });
+
+        // Watch for is_system attribute changes (user toggling message visibility)
+        // to update the "visible" badge on scene fold controls.
+        let visibilityUpdatePending = false;
+        const visibilityObserver = new MutationObserver((mutations) => {
+            if (visibilityUpdatePending) return;
+            for (const mutation of mutations) {
+                if (mutation.attributeName === 'is_system') {
+                    visibilityUpdatePending = true;
+                    requestAnimationFrame(() => {
+                        visibilityUpdatePending = false;
+                        const ctx = SillyTavern.getContext();
+                        const s = getSettings(ctx.extensionSettings);
+                        if (!s.enabled) return;
+                        applyAllFoldVisuals(ctx);
+                    });
+                    return;
+                }
+            }
+        });
+        visibilityObserver.observe(chatEl, { subtree: true, attributes: true, attributeFilter: ['is_system'] });
     }
 
     // Initial render if a chat is already loaded

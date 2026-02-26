@@ -418,6 +418,19 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
         summaryEl.addClass('scene-fold-summary');
 
         const count = scene.sourceMessageUUIDs.length;
+
+        // Count source messages that are visible to the LLM (is_system !== true)
+        let visibleCount = 0;
+        for (const uuid of scene.sourceMessageUUIDs) {
+            const idx = findMessageIndexByUUID(chat, uuid, uuidIndex);
+            if (idx !== -1 && !chat[idx].is_system) visibleCount++;
+        }
+        const visibleHtml = visibleCount > 0 ? `
+            <span class="scene-fold-visible-badge" title="${visibleCount} source message${visibleCount !== 1 ? 's are' : ' is'} visible to the AI">
+                <i class="fa-solid fa-circle"></i> ${visibleCount} visible
+            </span>
+        ` : '';
+
         const staleHtml = scene.stale ? `
             <span class="scene-fold-stale-badge" title="Source messages modified since summarization. Consider re-summarizing.">
                 <i class="fa-solid fa-triangle-exclamation"></i> Stale
@@ -429,6 +442,7 @@ export function applySceneFoldVisuals(context, scene, uuidIndex) {
                     <div class="scene-fold-toggle" data-scene-id="${scene.id}">
                         <span class="scene-fold-toggle-icon fa-solid ${scene.folded ? 'fa-chevron-right' : 'fa-chevron-down'}"></span>
                         <span class="scene-fold-badge">${count} message${count !== 1 ? 's' : ''} ${scene.folded ? 'folded' : 'expanded'}</span>
+                        ${visibleHtml}
                     </div>
                     ${staleHtml}
                     <div class="scene-fold-inline-buttons">

@@ -114,6 +114,19 @@
     opacity: 0.7;
 }
 
+.scene-fold-visible-badge {
+    font-size: 0.8em;
+    opacity: 0.7;
+    white-space: nowrap;
+    margin-left: 6px;
+}
+
+.scene-fold-visible-badge i {
+    font-size: 0.65em;
+    vertical-align: middle;
+    color: var(--SmartThemeQuoteColor, #6a9fb5);
+}
+
 /* ─── Collapse Tail (last source message) ──────────────────────────────────── */
 
 .scene-fold-collapse-tail {
